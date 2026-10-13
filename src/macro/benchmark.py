@@ -9,27 +9,35 @@
 # *                                                         *
 # ***********************************************************/
 
-import copy
 import numpy as np
 import plotly.offline as ptyplt
 import plotly.graph_objects as go
 
 from macro.glideslope import GlideslopeSimulator
 from macro.agent import Agent, OrbitalParams, SimulationParams
-from macro.utils import load_config
+from macro.config import load_config, resolve_config_path, resolve_output_dir
 
 
 class BenchmarkRunner:
-    def __init__(self, num_agents=18, num_jumps=5, auction_type="Hybrid"):
+    def __init__(
+        self,
+        num_agents=18,
+        num_jumps=5,
+        auction_type="Hybrid",
+        output_dir=None,
+        config_path=None,
+    ):
         self.num_agents = num_agents
         self.num_jumps = num_jumps
-        self.config = load_config()
+        self.config_path = resolve_config_path(config_path)
+        self.config = load_config(self.config_path)
         self.orbit = self._compute_orbital_params()
         self.sim_params = self._create_simulation_params(auction_type)
         self.initial_positions = self._get_initial_positions()
         self.target_positions = self._generate_target_positions()
         self.neighbor_radius = self.config["formation"]["neighbor_radius"]
         self.neighbors = self._init_neighbor_matrix()
+        self.output_dir = resolve_output_dir(self.config, self.config_path, output_dir)
 
     def _compute_orbital_params(self):
         return OrbitalParams(
@@ -181,12 +189,14 @@ class BenchmarkRunner:
         for i in range(self.num_agents):
             for j in range(self.num_agents):
                 if i != j:
-                    dist = np.linalg.norm(self.initial_positions[i] - self.initial_positions[j])
+                    dist = np.linalg.norm(
+                        self.initial_positions[i] - self.initial_positions[j]
+                    )
                     if dist < self.neighbor_radius:
                         neighbors[i][j] = 1
         return neighbors
 
-    def _simulate(self, title, traj, labels):
+    def _simulate(self, output_file, traj, labels):
         markers = []
         for agent in range(traj.shape[0]):
             markers.append(
@@ -200,7 +210,7 @@ class BenchmarkRunner:
                 )
             )
         fig = go.Figure(data=markers)
-        ptyplt.plot(fig, filename=title, auto_open=False)
+        ptyplt.plot(fig, filename=str(output_file), auto_open=False)
 
     def run(self, auction_types):
         simulation = GlideslopeSimulator(
@@ -223,14 +233,9 @@ class BenchmarkRunner:
         for auction_type in auction_types:
             self.sim_params.auction_type = auction_type
             simulation.set_simulation_params(self.sim_params)
-            traj, deltav, energy, neighbor_data = simulation.run()
+            traj, _, _, _ = simulation.run()
             self._simulate(
-                f"./results/benchmark-{auction_type.lower()}.html",
+                self.output_dir / f"benchmark-{auction_type.lower()}.html",
                 traj,
                 [f"Spacecraft {i}" for i in range(self.num_agents)],
             )
-
-if __name__ == "__main__":
-    benchmark = BenchmarkRunner(num_agents=18, num_jumps=5)
-    auction_types = ["Hybrid", "Distributed", "Consensus", "Greedy"]
-    benchmark.run(auction_types)

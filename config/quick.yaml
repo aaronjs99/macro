@@ -1,0 +1,28 @@
+# Reduced scenario for setup checks and interactive exploration.
+# The paper-scale configuration remains in default.yaml.
+orbit:
+  radius: 7275
+  gravpar: 398600.50
+  eccentricity: 0.05
+
+simulation:
+  seed: 42
+  num_frames: 40
+  timestep: 5.0
+  output_dir: results
+
+formation:
+  num_agents: 18
+  num_jumps: 4
+  neighbor_radius: 0.4
+  clear_aperture: 0.002
+  parab_radius: 0.003
+  expansion: 3
+
+auction:
+  enable: true
+  mode: Hybrid
+  final_only: false
+
+attitude:
+  mode: tracking

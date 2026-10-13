@@ -9,18 +9,28 @@
 # *                                                         *
 # ***********************************************************/
 
+from numbers import Integral, Real
+
 import numpy as np
 
 from macro.auction import auction_map
-from macro.utils import time_to_true_anomaly
 from macro.maneuvers import compute_state_transition_matrix, compute_maneuver_points
 from macro.graph import SystemGraph
 from macro.agent import Agent, OrbitalParams, SimulationParams
 
+
 class GlideslopeSimulator:
+    """Propagate each phase using exactly ``num_frames`` interval endpoints.
+
+    Trajectory sample ``k`` is the state at ``(k + 1) * timestep`` from the
+    start of this phase. The initial state at time zero is not duplicated in
+    the trajectory. A jump's final sample is its full endpoint, before the
+    following jump's impulsive burn, and supplies that following jump's state.
+    """
+
     def __init__(
         self,
-        agents: np.ndarray,
+        agents: list[Agent],
         neighbor_matrix: np.ndarray,
         neighbor_radius: float,
         target_positions: np.ndarray,
@@ -40,14 +50,29 @@ class GlideslopeSimulator:
         self.set_simulation_params(sim)
 
     def set_simulation_params(self, sim: SimulationParams):
+        for name in ("num_jumps", "num_frames"):
+            value = getattr(sim, name)
+            if isinstance(value, bool) or not isinstance(value, Integral) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer.")
+        if (
+            isinstance(sim.timestep, bool)
+            or not isinstance(sim.timestep, Real)
+            or not np.isfinite(sim.timestep)
+            or sim.timestep <= 0
+        ):
+            raise ValueError("timestep must be a finite positive number.")
+        if sim.num_frames % sim.num_jumps:
+            raise ValueError("num_frames must be divisible by num_jumps.")
+
         self.timestep = sim.timestep
         self.num_jumps = sim.num_jumps
         self.num_frames = sim.num_frames
         self.auction_type = sim.auction_type
+        self.auction_final_only = sim.auction_final_only
         self.layer_config = sim.layer_config
         self.flat_config = sim.flat_config
 
-        self.steps_per_jump = int(self.num_frames / self.num_jumps)
+        self.steps_per_jump = self.num_frames // self.num_jumps
         self.trajectory = np.zeros((len(self.agents), self.num_frames, 6))
         self.energy = 0.0
         self.deltavs = np.array([], dtype=float)
@@ -76,7 +101,9 @@ class GlideslopeSimulator:
                 flat_config=self.flat_config,
             )
 
-            if self.auction_type:
+            if self.auction_type and (
+                not self.auction_final_only or jump == self.num_jumps - 1
+            ):
                 if self.auction_type not in auction_map:
                     raise ValueError(f"Unknown auction type: {self.auction_type}")
                 if isinstance(self.target_positions, list):
@@ -88,8 +115,6 @@ class GlideslopeSimulator:
                     target_positions=self.target_positions,
                     graph=system_graph,
                 ).assign()
-            else:
-                self.target_positions = np.array([a.position for a in self.agents])
             for i, agent in enumerate(self.agents):
                 agent.target = self.target_positions[i]
                 agent.update_direction()
@@ -103,7 +128,7 @@ class GlideslopeSimulator:
                     r_t, v_t = compute_maneuver_points(
                         r_0=agent.position,
                         v_0=agent.velocity,
-                        times=(t0, t0 + self.timestep * step),
+                        times=(t0, t0 + self.timestep * (step + 1)),
                         eccentricity=self.eccentricity,
                         orbital_radius=self.orbital_radius,
                         angular_velocity=self.angular_velocity,

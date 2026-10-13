@@ -7,6 +7,7 @@ simulation:
   seed: 42
   num_frames: 800
   timestep: 5.0            # 4000.0 / num_frames
+  output_dir: results
 
 formation:
   num_agents: 36
@@ -20,3 +21,6 @@ auction:
   enable: true
   mode: Hybrid
   final_only: false
+
+attitude:
+  mode: tracking          # Use legacy explicitly to compare the historical update law.

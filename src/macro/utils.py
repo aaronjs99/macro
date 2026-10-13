@@ -11,39 +11,26 @@
 
 import numpy as np
 
-
-def load_config(config_path="config/default.yaml"):
-    """
-    Load a configuration file and return its contents.
-
-    Parameters:
-    ----------
-    config_path : str
-      Path to the configuration file
-
-    Returns:
-    -------
-    dict
-      Contents of the configuration file as a dictionary
-    """
-    import yaml
-
-    with open(config_path, "r") as file:
-        config = yaml.safe_load(file)
-    return config
+# Keep these imports available for existing callers of macro.utils.
+from macro.config import (
+    DEFAULT_CONFIG_PATH as DEFAULT_CONFIG_PATH,
+    load_config as load_config,
+)
 
 
-def random_sign():
+def random_sign(rng=None):
     """Return either +1 or -1 randomly."""
-    return 1 if np.random.randint(0, 2) == 0 else -1
+    rng = np.random if rng is None else rng
+    return 1 if rng.randint(0, 2) == 0 else -1
 
 
-def random_vector(scale=1.0):
+def random_vector(scale=1.0, *, rng=None):
     """Generate a 3D vector with random direction and uniform magnitude up to `scale`."""
-    return scale * np.array([random_sign() * np.random.rand() for _ in range(3)])
+    rng = np.random if rng is None else rng
+    return scale * np.array([random_sign(rng) * rng.rand() for _ in range(3)])
 
 
-def initialize_poses(num_agents: int, radius: float, *, seed=None):
+def initialize_poses(num_agents: int, radius: float, *, seed=None, rng=None):
     """
     Generate random initial positions and attitudes for spacecraft agents.
 
@@ -63,11 +50,16 @@ def initialize_poses(num_agents: int, radius: float, *, seed=None):
     initial_attitudes : np.ndarray
       Initial attitude vectors (Euler angles in radians)
     """
-    if seed is not None:
-        np.random.seed(seed)
+    if seed is not None and rng is not None:
+        raise ValueError("Provide seed or rng, not both")
+    rng = np.random.RandomState(seed) if seed is not None else rng
 
-    initial_positions = np.array([random_vector(radius) for _ in range(num_agents)])
-    initial_attitudes = np.array([random_vector(np.pi) for _ in range(num_agents)])
+    initial_positions = np.array(
+        [random_vector(radius, rng=rng) for _ in range(num_agents)]
+    )
+    initial_attitudes = np.array(
+        [random_vector(np.pi, rng=rng) for _ in range(num_agents)]
+    )
 
     return initial_positions, initial_attitudes
 
@@ -235,7 +227,9 @@ def consensus_step(
     ego_error = np.linalg.norm(previous[agent_id, :] - desired[agent_id, :])
 
     for neighbor_id in neighbors:
-        neighbor_error = np.linalg.norm(previous[neighbor_id, :] - desired[neighbor_id, :])
+        neighbor_error = np.linalg.norm(
+            previous[neighbor_id, :] - desired[neighbor_id, :]
+        )
         updated -= timestep * count * gains[neighbor_id] * (ego_error - neighbor_error)
 
     return updated

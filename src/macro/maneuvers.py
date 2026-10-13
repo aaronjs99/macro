@@ -11,9 +11,8 @@
 
 import numpy as np
 
-from macro.utils import load_config, time_to_true_anomaly
-
-config = load_config()
+from macro.config import load_config
+from macro.utils import time_to_true_anomaly
 
 
 def compute_state_transition_matrix(
@@ -114,9 +113,9 @@ def compute_state_transition_matrix(
             ]
         )
 
-    orbital_radius = kwargs.get(
-        "orbital_radius", config["orbit"]["radius"]
-    )  # Default orbital radius
+    orbital_radius = kwargs.get("orbital_radius")
+    if orbital_radius is None:
+        orbital_radius = load_config()["orbit"]["radius"]
     angular_momentum = (
         orbital_radius**2 * angular_velocity
     )  # Angular momentum of the orbit
@@ -139,10 +138,10 @@ def compute_state_transition_matrix(
 
     c0, c1 = rho0 * cf0, rho1 * cf1  # Cosine factors for f0 and f1
     s0, s1 = rho0 * sf0, rho1 * sf1  # Sine factors for f0 and f1
-    cd0, cd1 = -(sf0 + eccentricity * np.sin(2 * f0)), -(
+    cd0, _cd1 = -(sf0 + eccentricity * np.sin(2 * f0)), -(
         sf1 + eccentricity * np.sin(2 * f1)
     )  # Derivatives of cosine factors
-    sd0, sd1 = cf0 + eccentricity * np.cos(2 * f0), cf1 + eccentricity * np.cos(
+    sd0, _sd1 = cf0 + eccentricity * np.cos(2 * f0), cf1 + eccentricity * np.cos(
         2 * f1
     )  # Derivatives of sine factors
 
@@ -273,10 +272,14 @@ def compute_maneuver_points(
     eccentricity = kwargs.get("eccentricity", 0.0)
     if eccentricity < 0 or eccentricity >= 1:
         raise ValueError("Eccentricity must be in the range [0, 1).")
-    orbital_radius = kwargs.get("orbital_radius", config["orbit"]["radius"])
-    angular_velocity = kwargs.get(
-        "angular_velocity", np.sqrt(config["orbit"]["gravpar"] / orbital_radius**3)
-    )
+    orbital_radius = kwargs.get("orbital_radius")
+    angular_velocity = kwargs.get("angular_velocity")
+    if orbital_radius is None or angular_velocity is None:
+        orbit = load_config()["orbit"]
+        if orbital_radius is None:
+            orbital_radius = orbit["radius"]
+        if angular_velocity is None:
+            angular_velocity = np.sqrt(orbit["gravpar"] / orbital_radius**3)
     P = compute_state_transition_matrix(
         times=times,
         eccentricity=eccentricity,

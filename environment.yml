@@ -1,11 +1,8 @@
 name: macro
 channels:
   - conda-forge
-  - defaults
-
 dependencies:
   - python=3.11
-  - black
   - numpy
   - scipy
   - plotly
@@ -13,13 +10,5 @@ dependencies:
   - networkx
   - matplotlib
   - pip
-
-  # Optional: editor/dev tools
-  - pytest
-  - ipython
-  - mypy
-  - ruff
-  
-  # Pip install from pyproject.toml
   - pip:
-      - -e . # Install the package in editable mode
+      - -e .

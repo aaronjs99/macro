@@ -1,90 +1,122 @@
-# Megastructure Assembly via Collaborative Robots in Orbits (MACRO)
+# MACRO: Megastructure Assembly via Collaborative Robots in Orbits
 
-This repository contains simulation code accompanying the paper *Scalable Techniques for Autonomous Construction of a Paraboloidal Space Telescope in an Elliptic Orbit* by Aaron John Sabu and Dwaipayan Mukherjee.
+MACRO is the simulation code accompanying *Scalable Techniques for Autonomous Construction of a Paraboloidal Space Telescope in an Elliptic Orbit* by Aaron John Sabu and Dwaipayan Mukherjee. It models cooperative spacecraft maneuvers, formation assignment, intra-formation exchange, and attitude consensus for a distributed parabolic reflector.
 
-## Overview
+The current runner builds on the paper's orbital equations and reflector geometry, with repaired assignment, maneuver timing, phase handoffs and exchange planning. It is a desktop simulation, not a flight-control system. Numerical results differ from earlier versions that dropped jump endpoints or lost assignments.
 
-MACRO provides tools to simulate autonomous formation flying of multiple spacecraft for the construction of a large parabolic mirror while in orbit. The code implements formation maneuvers, attitude consensus and auction based allocation strategies used in the publication. Generated plots and animations from sample runs are available under the `results/` directory.
+## Architecture
 
-<!-- ## Abstract
+| Module | Role |
+| --- | --- |
+| `macro.agent` | Spacecraft, orbit, and simulation parameter models |
+| `macro.maneuvers` | Orbital state-transition and maneuver calculations |
+| `macro.glideslope` | Multi-agent maneuver simulation |
+| `macro.auction` | Assignment strategies for target allocation |
+| `macro.ifmea` | Intra-formation motion/exchange planning |
+| `macro.mirror` | Parabolic reflector geometry and desired attitudes |
+| `macro.graph` | Communication-graph representation |
+| `macro.main` | Top-level MACRO simulation composition |
+| `macro.config` | Shared YAML loading and scenario/output path resolution |
+| `macro.attitude` | Bounded, per-axis attitude error tracking |
+| `macro.results` | Unique run directories, numerical exports and offline reports |
 
-It is well acknowledged that human-made technology is not always at par with human curiosity, and an example is the inability to send large telescopes to outer space despite their higher resolution and less atmospheric interference. In this paper, we develop a framework for autonomous in-orbit construction using spacecraft formation such that a large telescope can be built in an elliptic orbit using multiple spacecraft. We split this problem into four steps for converging the position and attitude of each spacecraft at predefined values around a central spacecraft. Each spacecraft performs attitude synchronization with its neighbors to match its three degrees of freedom in orientation as a parabolic mirror. Simulations validate our proposed methods and the paper concludes with an open possibility of using other techniques to improve upon existing results. -->
+`config/default.yaml` contains the 36-spacecraft, 800-frame scenario. `config/quick.yaml` uses 18 spacecraft and 40 frames per maneuver for a smaller complete run. Generated results are intentionally not versioned.
 
-## Repository Structure
+## Setup
 
-```
-.
-├── config/               # YAML configuration files for simulations
-│   └── default.yaml
-├── results/              # Output directory for plots, logs, and animations
-├── src/
-│   └── macro/            # Core simulation and control modules
-│       ├── __init__.py
-│       ├── auction.py
-│       ├── benchmark.py
-│       ├── glideslope.py
-│       ├── ifmea.py
-│       ├── main.py       # Contains the Macro class (main simulation)
-│       ├── maneuvers.py
-│       ├── mirror.py
-│       ├── neighbors.py
-│       ├── simulate.py
-│       └── utils.py
-├── tests/                # Unit tests
-│   └── test_main.py
-├── run.py                # Top-level script to run a simulation
-├── environment.yml       # Conda environment definition (Python 3.11)
-├── pyproject.toml        # Project metadata and dependencies
-├── requirements.txt      # Optional pip-based install support
-├── README.md             # Project overview and setup instructions
-├── LICENSE               # License file
-└── .gitignore
-```
-
-## Installation
-
-This project requires Python 3.11. To set up the development environment using Conda:
+Use either of these minimal environments. The pip requirements file installs this
+package and uses the dependencies declared in `pyproject.toml`:
 
 ```bash
-# Create a new environment from the YAML file
 conda env create -f environment.yml
-
-# Activate the environment
 conda activate macro
-
-# (Optional) Install the project in editable mode with dev dependencies
-pip install -e .[dev]
 ```
 
-## Usage
+or:
 
-Run the main simulation entry point:
+```bash
+pip install -r requirements.txt
+```
+
+These instructions use the editable source checkout. The wheel currently contains the Python library; supply an explicit scenario path when using it without the repository's `config/` directory.
+
+## Run
+
+Start with the reduced scenario:
+
+```bash
+python run.py --quick
+```
+
+The runner prints a results directory. Open its `index.html` for the stage summary, interactive 3D trajectories and attitude histories. Plots are usable offline.
+
+Run the full supplied scenario:
 
 ```bash
 python run.py
 ```
 
-Simulation output will be written to HTML files in the working directory. 
-Adjust parameters in `src/main.py` to explore different scenarios.
-
-## Testing
-
-You can test the full simulation pipeline using:
+Use another configuration file when needed:
 
 ```bash
-pytest tests/test_main.py -v
+python run.py --config path/to/scenario.yaml
 ```
 
-## Contributing
+Add `--verbose` to show diagnostic output.
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and development instructions.
+Validate without creating files, choose a reproducible seed, or save numerical results without plots:
+
+```bash
+python run.py --quick --validate
+python run.py --quick --seed 7 --output path/to/runs
+python run.py --quick --no-plots
+```
+
+Every run creates a new `run-<UTC timestamp>-<unique suffix>` directory, preserving previous results. It contains `scenario.yaml`, `simulation.npz` and `summary.json`; plotted runs also include `index.html`, three stage HTML plots and `attitude_consensus.png`. A failed or interrupted run records that status rather than claiming completion. Constructing `Macro` and using `--validate` do not create outputs.
+
+Load saved arrays without pickle:
+
+```python
+import numpy as np
+
+with np.load("path/to/run/simulation.npz", allow_pickle=False) as data:
+    positions = data["trajectory"][:, :, :3]  # spacecraft, sample, X/Y/Z in km
+    times = data["trajectory_time_s"]
+```
+
+The archive also saves velocities, attitudes, desired states, phase initial states, layer assignments and communication history. The summary records endpoint errors, delta-v, controller mode, frame boundaries, configuration checksum and runtime versions.
+
+Relative config paths and `--output` paths use the current working directory. Relative YAML output paths use
+`config_path.parent.parent`, preserving the supplied `config/default.yaml` layout;
+set an absolute `simulation.output_dir` when a scenario lives elsewhere. The
+`BenchmarkRunner` also accepts `config_path` and an optional `output_dir` override.
+
+## Scenario behavior
+
+Spacecraft counts must fill complete concentric layers: 6, 18, 36, 60, 90, and so on. Frame counts must be positive and divisible by the positive number of jumps. Configuration validation reports the exact offending field for invalid values.
+
+`auction.enable: false` keeps prescribed targets. Supported modes are `Standard`, `Distributed`, `Consensus`, `Greedy` and `Hybrid`. `auction.final_only: true` auctions targets only on the final jump of each maneuver; otherwise auctions run at every jump. Iterative strategies fail explicitly on nonconvergence. Distributed and Consensus require a connected graph; Hybrid uses its Greedy fallback when disconnected. Assignment does not establish collision-free trajectories or global optimality.
+
+The supplied scenarios explicitly select `attitude.mode: tracking`. This controller mixes per-axis attitude errors with neighbors and anchors each spacecraft to its own desired attitude. Bounded integration substeps prevent a large timestep from amplifying errors through negative mixing weights. The historical norm-error update is available with `attitude.mode: legacy`; external scenarios without an attitude section retain that mode. The legacy law can diverge or overflow during long runs and reports an actionable failure. Reports show measured residuals for either controller; completing a run does not imply the attitude targets have been reached.
+
+Positions use kilometers, velocities kilometers per second, time seconds, and Euler angles radians. Exactly one state is recorded at each interval endpoint, starting at one timestep. Initial states are saved separately. Stage frame ranges include their start and exclude their end. Positions and velocities carry across phases, while the historical orbital reference epoch restarts for each maneuver. The full runner uses ring-topology communication; `neighbor_radius` remains a legacy benchmark input.
+
+## Verification
+
+After the editable installation, run:
+
+```bash
+python -m unittest discover -s tests -v
+python run.py --quick
+python run.py --no-plots
+```
+
+To test an uninstalled Windows checkout, set `$env:PYTHONPATH = "$PWD/src"` before running unittest. The tests exercise assignments, endpoint timing, exchange saturation, controller stability, CLI failures, saved data and reproducible reruns. Optional development checks are `python -m ruff check src run.py tests` and `git diff --check`. Build a wheel with `python -m build --wheel`; the normal isolated build installs its own build tools.
 
 ## Citation
 
-If you use this code in your research, please cite our ICC 2021 paper:
-
 ```bibtex
-@article{sabu2021scalable,
+@inproceedings{sabu2021scalable,
   author    = {John-Sabu, Aaron and Mukherjee, Dwaipayan},
   title     = {Scalable Techniques for Autonomous Construction of a Paraboloidal Space Telescope in an Elliptic Orbit},
   booktitle = {2021 Seventh Indian Control Conference (ICC)},
@@ -95,12 +127,8 @@ If you use this code in your research, please cite our ICC 2021 paper:
 }
 ```
 
-A machine-readable citation file is provided in [CITATION.cff](CITATION.cff).
+The machine-readable citation is in [CITATION.cff](CITATION.cff).
 
 ## License
 
-This project is licensed under the terms of the GNU General Public License version 2. See [LICENSE](LICENSE) for details.
-
-## Acknowledgements
-
-This work was supported in part by an ISRO-funded project bearing code RD/0120-ISROC00-007. Aaron John Sabu was an undergraduate student at the time of writing and Dwaipayan Mukherjee was an Assistant Professor in the Department of Electrical Engineering, IIT Bombay.
+GNU General Public License v2. See [LICENSE](LICENSE).

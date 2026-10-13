@@ -10,11 +10,11 @@
 # ***********************************************************/
 
 import numpy as np
+from collections import Counter
+from numbers import Integral
 
 from macro.graph import SystemGraph
 from macro.utils import NullLogger
-
-np.random.seed(42)  # For reproducibility
 
 
 class IFMEAEngine:
@@ -56,9 +56,13 @@ class IFMEAEngine:
         self.layer_config = layer_config
         self.layer_type = layer_type or list(range(len(layer_config)))
         self._validate_inputs()
+        self.layer_config = [layer.copy() for layer in layer_config]
+        self.commands = []
 
-        self.flat_config = [agent for layer in layer_config for agent in layer]
-        self.graph = kwargs.get("graph", SystemGraph(layer_config, self.flat_config))
+        self.flat_config = [agent for layer in self.layer_config for agent in layer]
+        self.graph = kwargs.get(
+            "graph", SystemGraph(self.layer_config, self.flat_config)
+        )
         self.layer_lengths = self.graph.get_layer_lengths()
 
     def _validate_inputs(self):
@@ -74,6 +78,24 @@ class IFMEAEngine:
         if len(self.layer_config) != len(self.layer_type):
             raise ValueError(
                 "Layer configuration and layer type must have the same number of layers."
+            )
+        counts = Counter(
+            agent_type for layer in self.layer_config for agent_type in layer
+        )
+        if any(
+            isinstance(agent_type, bool)
+            or not isinstance(agent_type, Integral)
+            or not 1 <= agent_type <= len(self.layer_config)
+            for agent_type in counts
+        ):
+            raise ValueError(
+                "Agent types must be integers from 1 to the number of layers"
+            )
+        if any(
+            counts[i + 1] != len(layer) for i, layer in enumerate(self.layer_config)
+        ):
+            raise ValueError(
+                "Each agent type count must equal the size of its destination layer"
             )
 
     def _find_nearest_mismatch(self, outer_layer_idx, inner_layer_idx, curr_idx):
@@ -99,7 +121,7 @@ class IFMEAEngine:
         len_next = len(next_layer)
 
         next_idx = int(curr_idx * len_next / len_curr)
-        mismatch_idx = next_idx
+        mismatch_idx = None
 
         for dist in range(int(len_next / 2) + 1):
             upper = (next_idx + dist) % len_next
@@ -124,8 +146,18 @@ class IFMEAEngine:
             The index of the outer layer to process.
         """
         inner_layer_idx = 0
+        seen = set()
 
         while inner_layer_idx != outer_layer_idx:
+            state = (
+                inner_layer_idx,
+                tuple(tuple(layer) for layer in self.graph.get_layer_config()),
+            )
+            if state in seen:
+                raise RuntimeError(
+                    "IFMEA planner repeated a configuration without progress"
+                )
+            seen.add(state)
             self.logger.debug(
                 f"Processing inner layer {inner_layer_idx} for outer layer {outer_layer_idx}"
             )
@@ -145,6 +177,10 @@ class IFMEAEngine:
             mismatch_idx, next_idx = self._find_nearest_mismatch(
                 outer_layer_idx, inner_layer_idx, curr_idx
             )
+            if mismatch_idx is None:
+                # A saturated next layer must first move its own outer-type agents onward.
+                inner_layer_idx += 1
+                continue
 
             # Rotate to align source and target
             shift = (next_idx - mismatch_idx) % self.layer_lengths[inner_layer_idx + 1]
@@ -186,6 +222,7 @@ class IFMEAEngine:
             self.logger.debug(
                 f"Configuration after processing: {self.graph.get_layer_config()}"
             )
+            inner_layer_idx = 0
 
     def run(self):
         """

@@ -9,4 +9,4 @@
 # *                                                         *
 # ***********************************************************/
 
-from .main import Macro
+from .main import Macro as Macro

@@ -12,21 +12,12 @@ authors = [{ name = "Aaron John Sabu", email = "aaronjs@g.ucla.edu" }
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "black",
     "numpy",
     "scipy",
     "plotly",
     "pyyaml",
     "networkx",
     "matplotlib",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "ipython",
-    "mypy",
-    "ruff"
 ]
 
 [tool.setuptools]
