@@ -39,7 +39,7 @@ packaging==25.0
     #   plotly
 pathspec==0.12.1
     # via black
-pillow==11.2.1
+pillow==13.0.0
     # via matplotlib
 platformdirs==4.3.8
     # via black
